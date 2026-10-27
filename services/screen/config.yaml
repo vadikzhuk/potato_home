@@ -1,0 +1,34 @@
+# Settings of the info screen. After editing: docker compose restart screen
+
+timezone: Europe/Riga
+page_reload_seconds: 60   # how often the TV reloads the page
+
+weather:
+  name: Riga
+  latitude: 56.95
+  longitude: 24.11
+  refresh_minutes: 30
+
+news:
+  popular_url: https://rus.lsm.lv/populjarnoe/
+  rss_url: https://rus.lsm.lv/rss/   # used when the popular page can't be read
+  count: 3                           # how many headlines fit the panel
+  refresh_minutes: 15
+
+health:
+  refresh_minutes: 0.5   # every 30 seconds
+  slow_ms: 800           # our services answering slower than this count as "slow"
+  slow_source_ms: 3000   # the same for outside websites (weather, news): they are farther away
+  timeout_seconds: 5     # no answer after this counts as "down"
+  services:              # each answers GET /health
+    - name: Users
+      url: http://users:8000/health
+    - name: Tickets
+      url: http://tickets:8000/health
+    - name: Telegram bot
+      url: http://bot:8000/health
+
+tickets:
+  url: http://tickets:8000   # inside Docker; the TICKETS_URL env variable overrides it
+  max_shown: 8               # the rest is shown as "+ N more"
+  refresh_minutes: 1

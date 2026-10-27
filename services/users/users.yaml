@@ -1,0 +1,11 @@
+# Users and their access to each service (levels: read, write, admin).
+# On the very first start (empty database) these users are created.
+# Later: edit this file and run `users import` to apply it,
+# or `users export` to write the current users back here.
+users:
+- name: admin       # rename later if you like: users edit admin --name YourName
+  telegram_id: null   # the bot tells you your id when you write /start
+  active: true
+  access:
+    users: admin
+    tickets: admin

@@ -1,0 +1,28 @@
+[project]
+name = "tickets"
+version = "0.1.0"
+description = "Home ticket tracker: tickets and their history."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "typer>=0.12",
+    "httpx>=0.27",  # asks the users service who is who
+    "tzdata",  # timezone data for Europe/Riga, also inside slim Docker images
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+tickets = "tickets.cli:run"  # gives you the `tickets` command
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["tickets"]
+
+[tool.setuptools.package-data]
+tickets = ["schema.sql"]

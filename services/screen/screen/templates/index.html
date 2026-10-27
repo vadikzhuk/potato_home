@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="{{ reload_seconds }}">
+  <title>Home</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+{# Small "updated 14:30" note in a panel's corner; turns red when the last refresh failed #}
+{% macro updated(p) -%}
+  <div class="updated{% if p.error %} stale{% endif %}">
+    {%- if p.updated %}updated {{ p.updated.strftime('%H:%M') }}{% endif %}
+    {%- if p.error %} · can't refresh{% endif -%}
+  </div>
+{%- endmacro %}
+
+{% macro placeholder(p) -%}
+  <div class="placeholder">{{ "Can't load: " ~ p.error if p.error else "Loading…" }}</div>
+{%- endmacro %}
+
+<div class="screen">
+  <div class="left">
+
+    {# ---------- Upper left: clock and weather ---------- #}
+    {% set p = panels.weather %}
+    <section class="panel weather">
+      {{ updated(p) }}
+      <div class="wx-top">
+        <div class="clock">
+          <div id="clock" class="time">{{ now.strftime('%H:%M') }}</div>
+          <div class="date">{{ now.strftime('%A, %-d %B') }}{% if p.data %} · {{ p.data.place }}{% endif %}</div>
+        </div>
+        {% if p.data %}{% set w = p.data.now %}
+        <div class="wx-now">
+          <span class="symbol">{{ w.symbol }}</span>
+          <span class="temp">{{ w.temp }}°</span>
+          <div class="wx-detail">
+            <div>{{ w.text }}</div>
+            <div class="muted">feels {{ w.feels }}° · wind {{ w.wind }} m/s · {{ w.humidity }}%</div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      {% if p.data %}
+      <div class="row hours">
+        {% for h in p.data.hours %}
+        <div class="slot">
+          <div class="muted">{{ h.time }}</div>
+          <div class="symbol">{{ h.symbol }}</div>
+          <div>{{ h.temp }}°</div>
+          <div class="rain{% if h.rain >= 50 %} likely{% endif %}">{{ h.rain }}%</div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="row days">
+        {% for d in p.data.days %}
+        <div class="slot">
+          <div class="muted">{{ d.name }}</div>
+          <div class="symbol">{{ d.symbol }}</div>
+          <div><b>{{ d.max }}°</b> <span class="muted">{{ d.min }}°</span></div>
+          <div class="rain{% if d.rain >= 50 %} likely{% endif %}">{{ d.rain }}%</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}{{ placeholder(p) }}{% endif %}
+    </section>
+
+    {# ---------- Lower left: trending news ---------- #}
+    {% set p = panels.news %}
+    <section class="panel news">
+      {{ updated(p) }}
+      <h2>{{ "Latest news" if p.data and p.data.source == "latest" else "Trending" }} <span class="muted">· rus.lsm.lv</span></h2>
+      {% if p.data %}
+      <ol class="news-list">
+        {% for item in p.data["items"] %}
+        <li>
+          <span class="rank">{{ item.rank }}</span>
+          <span class="headline">{{ item.title }} <span class="muted">{{ item.time }}</span></span>
+        </li>
+        {% endfor %}
+      </ol>
+      {% else %}{{ placeholder(p) }}{% endif %}
+    </section>
+
+    {# ---------- Under the news: how our services and data sources are doing ---------- #}
+    {% set p = panels.health %}
+    <section class="panel health">
+      {{ updated(p) }}
+      <h2>Services</h2>
+      {% if p.data %}
+      <table class="health-list">
+        {% for s in p.data.services %}
+        <tr class="{{ s.state }}">
+          <td class="dot">●</td>
+          <td class="name">{{ s.name }}</td>
+          <td class="ms">{{ "%d ms" % s.ms if s.ms is not none else "—" }}</td>
+          <td class="history">{% for h in s.history %}<span class="{{ h }}">●</span>{% endfor %}</td>
+          <td class="detail">{{ s.detail }}{% if s.since %} · since {{ s.since }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+        {% for s in sources %}
+        <tr class="{{ s.state }} source">
+          <td class="dot">●</td>
+          <td class="name">{{ s.name }}</td>
+          <td class="ms">{{ "%d ms" % s.ms if s.ms is not none else "—" }}</td>
+          <td class="history muted">at {{ s.updated }}</td>
+          <td class="detail">{{ s.detail }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% else %}{{ placeholder(p) }}{% endif %}
+    </section>
+
+  </div>
+
+  {# ---------- Right: active tickets ---------- #}
+  {% set p = panels.tickets %}
+  <section class="panel tickets">
+    {{ updated(p) }}
+    <h2>Tickets</h2>
+    {% if p.data %}{% set c = p.data.counts %}
+    <div class="counts">
+      <b>{{ c.open }}</b> open · <b>{{ c.in_progress }}</b> in progress
+      {%- if c.overdue %} · <b class="late-text">{{ c.overdue }}</b> overdue{% endif %}
+    </div>
+    {% if p.data.tickets %}
+    <ul class="ticket-list">
+      {% for t in p.data.tickets %}
+      <li class="{{ t.urgency }}">
+        <div class="title">{% if t.in_progress %}<span class="badge">in progress</span>{% endif %}{{ t.title }}</div>
+        <div class="meta">#{{ t.id }} · {{ t.assignee }}{% if t.due %} · <span class="due">{{ t.due }}</span>{% endif %}</div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% if p.data.hidden %}<div class="more">+ {{ p.data.hidden }} more</div>{% endif %}
+    {% else %}<div class="placeholder">Nothing to do. Enjoy the day!</div>{% endif %}
+    {% else %}{{ placeholder(p) }}{% endif %}
+  </section>
+</div>
+
+<script>
+  // Keeps the clock ticking between page reloads. Counts from the server's time,
+  // so a wrong clock or timezone on the TV doesn't matter. Works without it too.
+  (function () {
+    var start = {{ now.hour * 3600 + now.minute * 60 + now.second }};
+    var loaded = new Date().getTime();
+    var clock = document.getElementById("clock");
+    function pad(n) { return n < 10 ? "0" + n : "" + n; }
+    setInterval(function () {
+      var s = (start + Math.floor((new Date().getTime() - loaded) / 1000)) % 86400;
+      clock.innerHTML = pad(Math.floor(s / 3600)) + ":" + pad(Math.floor(s / 60) % 60);
+    }, 1000);
+  })();
+</script>
+</body>
+</html>

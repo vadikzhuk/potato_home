@@ -1,0 +1,74 @@
+# Every home service is one entry here. Each one is built from its own folder
+# under services/ and keeps its data in its own folder under ./data on the host.
+# Services find each other inside Docker by name, e.g. http://users:8000.
+
+x-healthcheck: &healthcheck
+  test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+  interval: 30s
+  timeout: 5s
+
+# Keep at most 3 log files of 10 MB per service; without this, logs grow forever
+# (bad on a small disk, and on a Raspberry Pi's SD card).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  users:
+    build: ./services/users
+    restart: unless-stopped
+    logging: *logging
+    env_file: .env
+    volumes:
+      - ./data/users:/data                         # users.db lives here
+      - ./services/users/users.yaml:/app/users.yaml  # edit on the host, apply with `users import`
+    ports:
+      - "127.0.0.1:8002:8000"   # only this machine: http://localhost:8002/docs
+    healthcheck: *healthcheck
+
+  tickets:
+    build: ./services/tickets
+    restart: unless-stopped
+    logging: *logging
+    env_file: .env
+    environment:
+      USERS_URL: http://users:8000
+    volumes:
+      - ./data/tickets:/data    # tickets.db lives here
+    ports:
+      - "127.0.0.1:8001:8000"   # only this machine: http://localhost:8001/docs
+    depends_on:
+      - users
+    healthcheck: *healthcheck
+
+  screen:
+    build: ./services/screen
+    restart: unless-stopped
+    logging: *logging
+    env_file: .env
+    volumes:
+      - ./services/screen/config.yaml:/app/config.yaml   # edit, then: docker compose restart screen
+    ports:
+      - "8080:8000"   # the whole home network, so the TV can open http://<host>:8080
+    depends_on:
+      - tickets
+    healthcheck: *healthcheck
+
+  bot:
+    build: ./services/bot
+    restart: unless-stopped
+    logging: *logging
+    env_file: .env    # needs TELEGRAM_TOKEN
+    environment:
+      USERS_URL: http://users:8000
+      TICKETS_URL: http://tickets:8000
+    volumes:
+      - ./data/bot:/data   # state.json: which ticket changes were already notified
+    depends_on:
+      - users
+      - tickets
+    # no published ports: the bot asks Telegram for messages itself (long polling).
+    # Inside Docker it answers http://bot:8000/health for the info screen.
+    healthcheck: *healthcheck

@@ -1,0 +1,15 @@
+# Runtime data (databases, backups) lives in data/ and is never committed
+data/*
+!data/.gitkeep
+
+# Secrets
+.env
+
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+
+.DS_Store
+.idea/
