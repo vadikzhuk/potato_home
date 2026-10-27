@@ -55,13 +55,18 @@ docker compose up -d --build tickets   # apply code changes to one service
 docker compose stop                    # stop everything
 ```
 
-Short aliases for the terminal tools, which run inside the containers:
+Short aliases for the terminal tools, which run inside the containers. Add them to
+`~/.zshrc` (macOS) or `~/.bashrc` (Linux) so every new terminal has them, and change the
+path if you cloned somewhere other than `~/potato_home`:
 
 ```bash
-alias dc="docker compose -f ~/dev/my_scripts/potato_home/docker-compose.yml"
+alias dc="docker compose -f ~/potato_home/docker-compose.yml"
 alias users="dc exec users users"
 alias tk="dc exec tickets tickets"
 ```
+
+The `users` alias hides the system's own `users` command (which lists logged-in users).
+If a command prints just `usage: users`, the alias isn't defined in that terminal.
 
 ## Users and access
 
