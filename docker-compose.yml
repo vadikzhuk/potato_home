@@ -67,7 +67,7 @@ services:
     volumes:
       - ./services/screen/config.yaml:/app/config.yaml   # edit, then: docker compose restart screen
     ports:
-      - "8080:8000"   # the whole home network, so the TV can open http://<host>:8080
+      - "0.0.0.0:8080:8000"   # the whole home network, so the TV can open http://<host>:8080
     depends_on:
       - tickets
       - estate
