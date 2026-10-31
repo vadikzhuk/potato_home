@@ -9,3 +9,4 @@ users:
   access:
     users: admin
     tickets: admin
+    estate: admin

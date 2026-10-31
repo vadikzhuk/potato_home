@@ -1,7 +1,7 @@
 """A tiny health endpoint, so the info screen can show how the bot is doing:
 GET http://bot:8000/health (inside Docker only, the port isn't published).
 
-Every minute a self-check asks Telegram, the users and the tickets services
+Every minute a self-check asks Telegram and the services the bot uses
 whether they answer, and remembers the problems it found. The endpoint reports:
   {"status": "ok"}
   {"status": "degraded", "detail": "what's wrong"}   e.g. Telegram unreachable,
@@ -17,6 +17,7 @@ from telegram.error import TelegramError
 from telegram.ext import Application, ContextTypes
 
 from .common import ApiError
+from .estate.client import api as estate_api
 from .tickets.client import api as tickets_api
 from .users.client import api as users_api
 
@@ -31,7 +32,7 @@ async def self_check(context: ContextTypes.DEFAULT_TYPE) -> None:
         await context.bot.get_me()
     except TelegramError as error:
         problems.append(f"Telegram: {error}")
-    for service in (users_api, tickets_api):
+    for service in (users_api, tickets_api, estate_api):
         try:
             await service.call("GET", "/health")
         except ApiError as error:

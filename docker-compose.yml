@@ -43,6 +43,22 @@ services:
       - users
     healthcheck: *healthcheck
 
+  estate:
+    build: ./services/estate
+    restart: unless-stopped
+    logging: *logging
+    env_file: .env
+    environment:
+      USERS_URL: http://users:8000
+    volumes:
+      - ./data/estate:/data   # estate.db lives here
+      - ./services/estate/criteria.yaml:/app/criteria.yaml   # edit on the host: used at once
+    ports:
+      - "127.0.0.1:8003:8000"   # only this machine: http://localhost:8003/docs
+    depends_on:
+      - users
+    healthcheck: *healthcheck
+
   screen:
     build: ./services/screen
     restart: unless-stopped
@@ -54,6 +70,7 @@ services:
       - "8080:8000"   # the whole home network, so the TV can open http://<host>:8080
     depends_on:
       - tickets
+      - estate
     healthcheck: *healthcheck
 
   bot:
@@ -64,11 +81,13 @@ services:
     environment:
       USERS_URL: http://users:8000
       TICKETS_URL: http://tickets:8000
+      ESTATE_URL: http://estate:8000
     volumes:
-      - ./data/bot:/data   # state.json: which ticket changes were already notified
+      - ./data/bot:/data   # state.json: which ticket changes and estate digests were already sent
     depends_on:
       - users
       - tickets
+      - estate
     # no published ports: the bot asks Telegram for messages itself (long polling).
     # Inside Docker it answers http://bot:8000/health for the info screen.
     healthcheck: *healthcheck

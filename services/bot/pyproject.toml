@@ -1,7 +1,7 @@
 [project]
 name = "bot"
 version = "0.1.0"
-description = "Telegram bot for the home tickets service."
+description = "Telegram bot for the home services: tickets, estate, users."
 requires-python = ">=3.11"
 dependencies = [
     "python-telegram-bot[job-queue]>=22,<23",  # job-queue: scheduled notifications
@@ -17,7 +17,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["bot", "bot.tickets", "bot.users"]
+packages = ["bot", "bot.tickets", "bot.estate", "bot.users"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

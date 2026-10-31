@@ -1,4 +1,5 @@
-"""Info screen: one 16:9 page for the TV with weather, news and active tickets.
+"""Info screen: one 16:9 page for the TV with today's weather, homes in Italy,
+news, service health and active tickets.
 
 How it works:
   * On start, one background loop per collector fetches its data on a timer
@@ -6,6 +7,7 @@ How it works:
   * The page is rendered from `panels`, so it is always instant; a slow or
     broken website never blocks it. A failed fetch keeps the old data.
   * The page reloads itself every minute (<meta refresh>, no JavaScript needed).
+  * Each reload may move the page a few pixels (pixel_shift), against OLED burn-in.
 
 To add a panel: write collectors/<name>.py, add it to COLLECTORS and the template.
 """
@@ -25,7 +27,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .collectors import health, news, tickets, weather
+from .collectors import estate, health, news, tickets, weather
 
 HERE = Path(__file__).parent
 log = logging.getLogger("uvicorn.error")
@@ -35,12 +37,14 @@ def load_config() -> dict:
     path = os.environ.get("SCREEN_CONFIG") or HERE.parent / "config.yaml"
     config = yaml.safe_load(Path(path).read_text())
     config["tickets"]["url"] = os.environ.get("TICKETS_URL") or config["tickets"]["url"]
+    config["estate"]["url"] = os.environ.get("ESTATE_URL") or config["estate"]["url"]
     return config
 
 
 CONFIG = load_config()
 LOCAL_TZ = ZoneInfo(CONFIG["timezone"])
-COLLECTORS = {"weather": weather.fetch, "news": news.fetch, "tickets": tickets.fetch, "health": health.fetch}
+COLLECTORS = {"weather": weather.fetch, "estate": estate.fetch, "news": news.fetch, "tickets": tickets.fetch,
+              "health": health.fetch}
 
 # The latest result of every collector: what the page shows.
 # took_ms: how long the last fetch took, shown in the health panel for outside sources.
@@ -76,6 +80,22 @@ app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")
 
 
+def pixel_shift(now: datetime, settings: dict) -> tuple[float, float]:
+    """How far to move the page now, in rem: (right, down).
+
+    The page walks a 5×5 grid around its normal place, row by row like a snake,
+    one step every `every_minutes`. A CSS animation wouldn't do: the page
+    reloads every minute and would start from the beginning each time.
+    """
+    size = settings["max_rem"]
+    if not size:
+        return 0.0, 0.0
+    steps = [-size, -size / 2, 0.0, size / 2, size]
+    spots = [(x, y) for row, y in enumerate(steps) for x in (steps if row % 2 == 0 else steps[::-1])]
+    minute_of_day = now.hour * 60 + now.minute
+    return spots[minute_of_day // settings["every_minutes"] % len(spots)]
+
+
 @app.get("/", response_class=HTMLResponse)
 def page(request: Request):
     slow_ms = CONFIG["health"]["slow_source_ms"]
@@ -88,6 +108,7 @@ def page(request: Request):
         "sources": sources,
         "now": datetime.now(LOCAL_TZ),
         "reload_seconds": CONFIG["page_reload_seconds"],
+        "shift": pixel_shift(datetime.now(LOCAL_TZ), CONFIG["pixel_shift"]),
     })
 
 

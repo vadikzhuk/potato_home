@@ -27,6 +27,7 @@ def test_report(monkeypatch):
 async def test_self_check_collects_problems(monkeypatch):
     monkeypatch.setattr(health, "last_check", {"at": None, "problems": []})
     monkeypatch.setattr(health.users_api, "call", AsyncMock(return_value={"status": "ok"}))
+    monkeypatch.setattr(health.estate_api, "call", AsyncMock(return_value={"status": "ok"}))
     monkeypatch.setattr(health.tickets_api, "call",
                         AsyncMock(side_effect=ApiError("The tickets service is not reachable (ConnectError).", 503)))
     context = SimpleNamespace(bot=SimpleNamespace(get_me=AsyncMock(side_effect=NetworkError("timed out"))))

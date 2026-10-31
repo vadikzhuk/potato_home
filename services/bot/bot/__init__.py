@@ -5,6 +5,8 @@
   access.py    who may talk to the bot, and where
   health.py    /health endpoint for the info screen
   common.py    shared helpers (calling services, time, formatting)
+  state.py     what the bot remembers between restarts (data/bot/state.json)
   users/       /user_... commands
   tickets/     /ticket... commands and ticket notifications
+  estate/      /estate... commands and the daily digest of homes in Italy
 """

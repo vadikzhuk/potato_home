@@ -20,51 +20,56 @@
   <div class="placeholder">{{ "Can't load: " ~ p.error if p.error else "Loading…" }}</div>
 {%- endmacro %}
 
-<div class="screen">
+{# Moved a little each reload, against OLED burn-in (see pixel_shift in main.py) #}
+{% set move = "translate(%.3frem, %.3frem)" % shift %}
+<div class="screen" style="-webkit-transform: {{ move }}; transform: {{ move }};">
   <div class="left">
 
-    {# ---------- Upper left: clock and weather ---------- #}
+    {# ---------- Top left: clock and today's weather, in one strip ---------- #}
     {% set p = panels.weather %}
     <section class="panel weather">
       {{ updated(p) }}
-      <div class="wx-top">
-        <div class="clock">
-          <div id="clock" class="time">{{ now.strftime('%H:%M') }}</div>
-          <div class="date">{{ now.strftime('%A, %-d %B') }}{% if p.data %} · {{ p.data.place }}{% endif %}</div>
-        </div>
-        {% if p.data %}{% set w = p.data.now %}
-        <div class="wx-now">
-          <span class="symbol">{{ w.symbol }}</span>
-          <span class="temp">{{ w.temp }}°</span>
-          <div class="wx-detail">
-            <div>{{ w.text }}</div>
-            <div class="muted">feels {{ w.feels }}° · wind {{ w.wind }} m/s · {{ w.humidity }}%</div>
-          </div>
-        </div>
-        {% endif %}
+      <div class="clock">
+        <span id="clock" class="time">{{ now.strftime('%H:%M') }}</span>
+        <span class="date">{{ now.strftime('%A, %-d %B') }}{% if p.data %}<br>{{ p.data.place }}{% endif %}</span>
       </div>
+      {% if p.data %}{% set w = p.data.now %}{% set t = p.data.today %}
+      <div class="wx-now">
+        <span class="symbol">{{ w.symbol }}</span>
+        <span class="temp">{{ w.temp }}°</span>
+        <div class="wx-detail">
+          <div>{{ w.text }} · <b>{{ t.max }}°</b> <span class="muted">/ {{ t.min }}°</span>
+            · <span class="rain{% if t.rain >= 50 %} likely{% endif %}">rain {{ t.rain }}%</span></div>
+          <div class="muted">feels {{ w.feels }}° · wind {{ w.wind }} m/s · {{ w.humidity }}%</div>
+        </div>
+      </div>
+      {% else %}{{ placeholder(p) }}{% endif %}
+    </section>
 
-      {% if p.data %}
-      <div class="row hours">
-        {% for h in p.data.hours %}
-        <div class="slot">
-          <div class="muted">{{ h.time }}</div>
-          <div class="symbol">{{ h.symbol }}</div>
-          <div>{{ h.temp }}°</div>
-          <div class="rain{% if h.rain >= 50 %} likely{% endif %}">{{ h.rain }}%</div>
+    {# ---------- Under it: the best homes in Italy, each with a QR code to its page ---------- #}
+    {% set p = panels.estate %}
+    <section class="panel estate">
+      {{ updated(p) }}
+      <h2>Homes in Italy <span class="muted">· best now · scan to open</span></h2>
+      {% if p.data %}{% if p.data.listings %}
+      <div class="homes">
+        {% for h in p.data.listings %}
+        <div class="home">
+          <div class="home-text">
+            <div class="home-top">
+              <span class="price">{{ h.price }}</span>
+              <span class="score">score {{ h.score }}</span>
+            </div>
+            <div class="town">{{ h.town }} <span class="muted">{{ h.province }}</span></div>
+            <div class="specs">{{ h.specs }}</div>
+            {% if h.auction %}<div class="auction">{{ h.auction }}</div>{% endif %}
+            <div class="summary">{{ h.summary }}</div>
+          </div>
+          <div class="qr">{{ h.qr | safe }}</div>
         </div>
         {% endfor %}
       </div>
-      <div class="row days">
-        {% for d in p.data.days %}
-        <div class="slot">
-          <div class="muted">{{ d.name }}</div>
-          <div class="symbol">{{ d.symbol }}</div>
-          <div><b>{{ d.max }}°</b> <span class="muted">{{ d.min }}°</span></div>
-          <div class="rain{% if d.rain >= 50 %} likely{% endif %}">{{ d.rain }}%</div>
-        </div>
-        {% endfor %}
-      </div>
+      {% else %}<div class="placeholder">Nothing matches the criteria yet.</div>{% endif %}
       {% else %}{{ placeholder(p) }}{% endif %}
     </section>
 

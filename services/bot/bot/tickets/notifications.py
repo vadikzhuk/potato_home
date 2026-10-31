@@ -5,18 +5,17 @@
     (tickets admins also get late tickets that nobody is assigned to)
 
 To know what is new, the bot reads the tickets service's list of changes
-(/events) and remembers the id of the last change it handled in a small JSON file.
+(/events) and remembers the id of the last change it handled (see state.py).
 """
 
-import json
 import logging
 import os
 from datetime import time
-from pathlib import Path
 
 from telegram.error import TelegramError
 from telegram.ext import Application, ContextTypes
 
+from .. import state
 from ..common import HTML, LOCAL_TZ, ApiError, has_level
 from ..users.client import api as users_api
 from . import texts
@@ -24,7 +23,6 @@ from .client import api
 
 log = logging.getLogger(__name__)
 SERVICE = "tickets"
-SERVICE_DIR = Path(__file__).resolve().parents[2]  # services/bot when run from the repo
 
 
 def schedule(app: Application) -> None:
@@ -32,24 +30,6 @@ def schedule(app: Application) -> None:
     app.job_queue.run_repeating(check_new_events, interval=60, first=5)
     hour, minute = os.environ.get("MORNING_SUMMARY_TIME", "08:30").split(":")
     app.job_queue.run_daily(morning_summary, time=time(int(hour), int(minute), tzinfo=LOCAL_TZ))
-
-
-def state_file() -> Path:
-    """BOT_STATE from the environment, or potato_home/data/bot/state.json locally."""
-    return Path(os.environ.get("BOT_STATE") or SERVICE_DIR.parent.parent / "data" / "bot" / "state.json")
-
-
-def load_last_event_id() -> int | None:
-    try:
-        return json.loads(state_file().read_text())["last_event_id"]
-    except (FileNotFoundError, KeyError, ValueError):
-        return None
-
-
-def save_last_event_id(event_id: int) -> None:
-    path = state_file()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"last_event_id": event_id}))
 
 
 # --- Assignments --------------------------------------------------------------
@@ -71,11 +51,11 @@ def assignments(events: list[dict], users: list[dict]) -> list[tuple[dict, dict]
 
 
 async def check_new_events(context: ContextTypes.DEFAULT_TYPE) -> None:
-    last_id = load_last_event_id()
+    last_id = state.load("last_event_id")
     try:
         if last_id is None:
             # First start: skip everything that happened before the bot existed
-            save_last_event_id(await _newest_event_id())
+            state.save("last_event_id", await _newest_event_id())
             return
         events = await api.events(after_id=last_id)
         if not events:
@@ -88,7 +68,7 @@ async def check_new_events(context: ContextTypes.DEFAULT_TYPE) -> None:
     except ApiError as error:
         log.warning("Can't check for new events: %s", error)  # try again next minute
         return
-    save_last_event_id(events[-1]["id"])
+    state.save("last_event_id", events[-1]["id"])
 
 
 async def _newest_event_id() -> int:

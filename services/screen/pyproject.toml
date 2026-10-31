@@ -1,7 +1,7 @@
 [project]
 name = "screen"
 version = "0.1.0"
-description = "16:9 info screen for the TV: weather, news, tickets."
+description = "16:9 info screen for the TV: weather, homes in Italy, news, tickets."
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
@@ -10,6 +10,7 @@ dependencies = [
     "httpx>=0.27",
     "beautifulsoup4>=4.12",
     "pyyaml>=6",
+    "segno>=1.6",  # QR codes for the homes in Italy
     "tzdata",  # timezone data for Europe/Riga, also inside slim Docker images
 ]
 

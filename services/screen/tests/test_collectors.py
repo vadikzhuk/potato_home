@@ -1,25 +1,18 @@
 from datetime import date
 
-from screen.collectors import news, tickets, weather
+from screen.collectors import estate, news, tickets, weather
 
 
 def test_weather_parse():
-    hours = [f"2026-10-27T{h:02d}:00" for h in range(24)] + [f"2026-10-28T{h:02d}:00" for h in range(24)]
     raw = {
         "current": {"time": "2026-10-27T12:15", "temperature_2m": 9.4, "apparent_temperature": 6.7,
-                    "weather_code": 3, "wind_speed_10m": 4.0, "relative_humidity_2m": 91},
-        "hourly": {"time": hours, "temperature_2m": [5.0] * 48, "weather_code": [61] * 48,
-                   "precipitation_probability": [70] * 48},
-        "daily": {"time": ["2026-10-27", "2026-10-28"], "weather_code": [0, 71],
-                  "temperature_2m_max": [10.3, 2.0], "temperature_2m_min": [6.9, -1.4],
-                  "precipitation_probability_max": [0, 80]},
+                    "weather_code": 71, "wind_speed_10m": 4.0, "relative_humidity_2m": 91},
+        "daily": {"time": ["2026-10-27"], "temperature_2m_max": [10.3], "temperature_2m_min": [-1.4],
+                  "precipitation_probability_max": [80]},
     }
     w = weather.parse(raw, "Riga")
-    assert w["now"]["temp"] == 9 and w["now"]["text"] == "Overcast"
-    assert [h["time"] for h in w["hours"]] == ["15:00", "18:00", "21:00", "00:00",
-                                               "03:00", "06:00", "09:00", "12:00"]
-    assert [d["name"] for d in w["days"]] == ["Today", "Wed"]
-    assert w["days"][1]["symbol"].startswith("❄")
+    assert w["now"]["temp"] == 9 and w["now"]["text"] == "Light snow" and w["now"]["symbol"].startswith("❄")
+    assert w["today"] == {"max": 10, "min": -1, "rain": 80}
 
 
 POPULAR_HTML = """
@@ -68,3 +61,28 @@ def test_tickets_prepare_cuts_to_max_shown():
     result = tickets.prepare(summary, max_shown=2, today=date(2026, 10, 27))
     assert len(result["tickets"]) == 2 and result["hidden"] == 1
     assert result["tickets"][0]["assignee"] == "nobody"
+
+
+def home(**fields):
+    data = {"id": 12, "price": 26990.0, "score": 69, "town": "Sarzana", "province": "La Spezia",
+            "m2": 130.0, "bedrooms": 2, "bedrooms_guessed": True, "kind": "apartment",
+            "is_auction": True, "auction_date": "2026-12-16", "occupancy": "free",
+            "description": "Tribunale: La Spezia rge: 12/2024 pvp: 4625138\n\nAppartamento in asta  a Sarzana. " + "Bello " * 60,
+            "url": "https://www.trovacasa.it/annunci/sp-tc-69048-73960277"}
+    data.update(fields)
+    return data
+
+
+def test_estate_card():
+    card = estate.prepare(home())
+    assert card["price"] == "26 990 €" and card["town"] == "Sarzana"
+    assert card["specs"] == "130 m² · ~2 bedr. · apartment"
+    assert card["auction"] == "Auction 16 Dec · free"
+    assert card["summary"].startswith("Appartamento in asta a Sarzana.")  # court numbers gone, spaces tidied
+    assert len(card["summary"]) <= estate.SUMMARY_LENGTH and card["summary"].endswith("…")
+    assert card["qr"].startswith("<svg") and "viewBox" in card["qr"] and "width=" not in card["qr"]
+
+
+def test_estate_card_for_a_normal_sale():
+    card = estate.prepare(home(is_auction=False, m2=None, bedrooms=None, description="Casa con giardino"))
+    assert card["auction"] == "" and card["specs"] == "apartment" and card["summary"] == "Casa con giardino"

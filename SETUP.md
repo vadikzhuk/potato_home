@@ -329,6 +329,14 @@ git pull
 
 setup.sh rebuilds only what changed. Your data and `.env` stay as they are.
 
+When an update brings a **new service**, setup.sh creates its data folder and starts it,
+but nobody has access to it yet. Give it to yourself (and others) by name, e.g. for estate:
+
+```bash
+users grant YourName estate admin
+users grant Anna estate read
+```
+
 ## Backups
 
 All data is in `data/`, a few small files. To make a copy:

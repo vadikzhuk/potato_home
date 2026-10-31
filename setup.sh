@@ -16,7 +16,7 @@
 #   3. Docker: running now and started on every boot
 #   4. Docker access: directly, or through sudo
 #   5. Settings: .env with API_TOKEN (generated), TELEGRAM_TOKEN (asked), TZ, MORNING_SUMMARY_TIME
-#   6. Data folders: data/users, data/tickets, data/bot
+#   6. Data folders: data/users, data/tickets, data/estate, data/bot
 #   7. Start: build and start all services, then wait until each one answers
 #   8. Summary: addresses, next steps, sleep/lid/firewall reminders
 #
@@ -336,7 +336,7 @@ setup_env() {
 setup_data() {
     step "Data folders"
     local dir
-    for dir in data/users data/tickets data/bot; do
+    for dir in data/users data/tickets data/estate data/bot; do
         if [[ -d $dir ]]; then
             continue
         elif $CHECK_ONLY; then
@@ -377,8 +377,8 @@ bot_health() {
 
 start_services() {
     step "Services"
-    local services=(users tickets screen bot)
-    [[ -z $(env_get TELEGRAM_TOKEN) ]] && services=(users tickets screen)
+    local services=(users tickets estate screen bot)
+    [[ -z $(env_get TELEGRAM_TOKEN) ]] && services=(users tickets estate screen)
 
     if $CHECK_ONLY; then
         local status service
@@ -403,6 +403,7 @@ start_services() {
 
     wait_for users   curl -sf http://localhost:8002/health
     wait_for tickets curl -sf http://localhost:8001/health
+    wait_for estate  curl -sf http://localhost:8003/health
     wait_for screen  curl -sf http://localhost:8080/health
     if [[ " ${services[*]} " == *" bot "* ]]; then
         wait_for bot bot_health

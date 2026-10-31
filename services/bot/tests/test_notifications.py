@@ -1,3 +1,4 @@
+from bot import state
 from bot.tickets import notifications
 
 
@@ -50,6 +51,14 @@ def test_morning_lists():
 
 def test_state_file_roundtrip(tmp_path, monkeypatch):
     monkeypatch.setenv("BOT_STATE", str(tmp_path / "bot" / "state.json"))
-    assert notifications.load_last_event_id() is None
-    notifications.save_last_event_id(42)
-    assert notifications.load_last_event_id() == 42
+    assert state.load("last_event_id") is None
+    state.save("last_event_id", 42)
+    state.save("estate_last_run", 3)  # another key doesn't overwrite the first
+    assert (state.load("last_event_id"), state.load("estate_last_run")) == (42, 3)
+
+
+def test_old_state_file_still_works(tmp_path, monkeypatch):
+    file = tmp_path / "state.json"
+    file.write_text('{"last_event_id": 7}')  # written by the bot before state.py existed
+    monkeypatch.setenv("BOT_STATE", str(file))
+    assert state.load("last_event_id") == 7

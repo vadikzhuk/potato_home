@@ -1,6 +1,7 @@
-"""Weather from Open-Meteo (https://open-meteo.com): free, no API key needed."""
+"""Today's weather from Open-Meteo (https://open-meteo.com): free, no API key needed.
 
-from datetime import date
+Only what fits a small strip: the weather now, and today's high, low and chance of rain.
+"""
 
 import httpx
 
@@ -38,7 +39,6 @@ CODES = {
     96: ("⚡", "Thunderstorm, hail"),
     99: ("⚡", "Thunderstorm, hail"),
 }
-DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 TEXT_STYLE = "︎"  # asks the browser to draw the symbol as text, not as a colour emoji
 
 
@@ -49,9 +49,8 @@ def fetch(config: dict) -> dict:
         "longitude": place["longitude"],
         "timezone": config["timezone"],
         "current": "temperature_2m,apparent_temperature,weather_code,wind_speed_10m,relative_humidity_2m",
-        "hourly": "temperature_2m,weather_code,precipitation_probability",
-        "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
-        "forecast_days": 5,
+        "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+        "forecast_days": 1,
         "wind_speed_unit": "ms",
     }
     response = httpx.get(URL, params=params, timeout=15)
@@ -63,30 +62,7 @@ def parse(raw: dict, place: str) -> dict:
     """Turn Open-Meteo's answer into what the page shows."""
     current = raw["current"]
     symbol, text = describe(current["weather_code"])
-
-    # Next 24 hours in 3-hour steps, starting after the current hour
-    hourly = raw["hourly"]
-    this_hour = current["time"][:13] + ":00"  # '2026-10-27T12:15' -> '2026-10-27T12:00'
-    start = hourly["time"].index(this_hour) if this_hour in hourly["time"] else 0
-    hours = []
-    for i in range(start + 3, min(start + 25, len(hourly["time"])), 3):
-        hours.append({
-            "time": hourly["time"][i][11:16],
-            "temp": round(hourly["temperature_2m"][i]),
-            "symbol": describe(hourly["weather_code"][i])[0],
-            "rain": hourly["precipitation_probability"][i],
-        })
-
     daily = raw["daily"]
-    days = []
-    for i, day in enumerate(daily["time"]):
-        days.append({
-            "name": "Today" if i == 0 else DAY_NAMES[date.fromisoformat(day).weekday()],
-            "symbol": describe(daily["weather_code"][i])[0],
-            "max": round(daily["temperature_2m_max"][i]),
-            "min": round(daily["temperature_2m_min"][i]),
-            "rain": daily["precipitation_probability_max"][i],
-        })
 
     return {
         "place": place,
@@ -98,8 +74,11 @@ def parse(raw: dict, place: str) -> dict:
             "wind": round(current["wind_speed_10m"]),
             "humidity": current["relative_humidity_2m"],
         },
-        "hours": hours,
-        "days": days,
+        "today": {
+            "max": round(daily["temperature_2m_max"][0]),
+            "min": round(daily["temperature_2m_min"][0]),
+            "rain": daily["precipitation_probability_max"][0],
+        },
     }
 
 

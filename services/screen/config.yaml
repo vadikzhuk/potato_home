@@ -3,6 +3,12 @@
 timezone: Europe/Riga
 page_reload_seconds: 60   # how often the TV reloads the page
 
+# Moves the whole page a little, to a new spot every few minutes, so an OLED TV
+# doesn't burn in the panel edges and headings. Too small to notice from the sofa.
+pixel_shift:
+  max_rem: 0.5        # furthest from the middle (0.5 = 8 px at 1920 wide); 0 turns it off
+  every_minutes: 3
+
 weather:
   name: Riga
   latitude: 56.95
@@ -25,8 +31,15 @@ health:
       url: http://users:8000/health
     - name: Tickets
       url: http://tickets:8000/health
+    - name: Estate
+      url: http://estate:8000/health
     - name: Telegram bot
       url: http://bot:8000/health
+
+estate:
+  url: http://estate:8000    # inside Docker; the ESTATE_URL env variable overrides it
+  count: 2                   # cards in the "Homes in Italy" panel (2 fit the width well)
+  refresh_minutes: 15
 
 tickets:
   url: http://tickets:8000   # inside Docker; the TICKETS_URL env variable overrides it
