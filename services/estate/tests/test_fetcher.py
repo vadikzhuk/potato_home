@@ -47,3 +47,18 @@ def test_is_due(conn):
     conn.execute("INSERT INTO runs (started_at) VALUES (?)", (later.isoformat(),))
     assert not fetcher.is_due(conn, CRITERIA, later)      # already today
     assert fetcher.is_due(conn, CRITERIA, at("2026-11-01T06:00:00+01:00"))  # next day
+
+
+def test_one_fetch_at_a_time_even_from_another_program(conn):
+    conn.execute("INSERT INTO runs (started_at) VALUES ('2026-10-31T09:44:00+00:00')")  # still running
+    with pytest.raises(fetcher.Busy, match="#1 is already running"):
+        fetcher.run(conn, CRITERIA, {"s": FakeSource(listing())}, say=lambda text: None)
+
+
+def test_a_fetch_cut_off_by_a_restart_is_tried_again(conn):
+    later = datetime(2026, 10, 31, 6, 0, tzinfo=core.LOCAL_TZ)
+    conn.execute("INSERT INTO runs (started_at) VALUES (?)", (later.isoformat(),))
+    assert not fetcher.is_due(conn, CRITERIA, later)   # running
+    assert core.mark_interrupted(conn) == 1           # the service restarted
+    assert core.running_run(conn) is None and core.latest_run(conn) is None
+    assert fetcher.is_due(conn, CRITERIA, later)       # so today's fetch runs again

@@ -1,6 +1,7 @@
 """Terminal interface. Run `tickets --help` to see all commands.
 
-Each command reads its arguments and calls one function from core.py.
+Reading opens the database directly (read-only). Changes are sent to the running
+tickets service (see service.py), so the service is the only program writing it.
 By default you act as the first tickets admin; use `--as NAME` to act as someone else.
 People are managed in the users service (the `users` command).
 """
@@ -11,7 +12,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import core, db
+from . import core, db, service
 from .people import People, Person, Unavailable
 
 app = typer.Typer(help="Home ticket tracker.", no_args_is_help=True)
@@ -29,7 +30,7 @@ actor: Person | None
 def main(as_user: str = typer.Option(None, "--as", envvar="TICKETS_AS",
                                      help="Act as this user (default: the first tickets admin).")):
     global conn, people, actor
-    conn = db.connect()
+    conn = db.connect(read_only=True)
     people = People.from_service()
     if as_user:
         actor = person_named(as_user)
@@ -112,9 +113,10 @@ def new(
     assign: str = typer.Option(None, help="Name of the user to assign."),
 ):
     """Create a ticket."""
-    assignee_id = person_named(assign).id if assign else None
-    t = core.create_ticket(conn, people, actor, title, description, due, assignee_id)
-    console.print(f"Created [bold]#{t.id}[/bold] {t.title}")
+    body = {"title": title, "description": description, "due_date": due,
+            "assignee_id": person_named(assign).id if assign else None}
+    t = service.call("POST", "/tickets", actor, json=body)
+    console.print(f"Created [bold]#{t['id']}[/bold] {t['title']}")
 
 
 @app.command()
@@ -130,28 +132,28 @@ def edit(
     changes = {field: value for field, value in changes.items() if value is not None}
     if no_due:
         changes["due_date"] = None
-    t = core.update_ticket(conn, people, actor, ticket_id, **changes)
-    console.print(f"Updated #{t.id} {t.title}")
+    t = service.call("PATCH", f"/tickets/{ticket_id}", actor, json=changes)
+    console.print(f"Updated #{t['id']} {t['title']}")
 
 
 @app.command()
 def assign(ticket_id: int, user: str):
     """Assign (or reassign) a ticket to a user."""
     assignee = person_named(user)
-    core.update_ticket(conn, people, actor, ticket_id, assignee_id=assignee.id)
+    service.call("PATCH", f"/tickets/{ticket_id}", actor, json={"assignee_id": assignee.id})
     console.print(f"#{ticket_id} is now assigned to {assignee.name}")
 
 
 @app.command()
 def unassign(ticket_id: int):
     """Remove the assignee from a ticket."""
-    core.update_ticket(conn, people, actor, ticket_id, assignee_id=None)
+    service.call("PATCH", f"/tickets/{ticket_id}", actor, json={"assignee_id": None})
     console.print(f"#{ticket_id} is unassigned")
 
 
 def _set_status(ticket_id: int, status: str) -> None:
-    t = core.update_ticket(conn, people, actor, ticket_id, status=status)
-    console.print(f"#{t.id} {t.title}: [{STATUS_COLORS[status]}]{status}[/]")
+    t = service.call("PATCH", f"/tickets/{ticket_id}", actor, json={"status": status})
+    console.print(f"#{t['id']} {t['title']}: [{STATUS_COLORS[status]}]{status}[/]")
 
 
 @app.command()

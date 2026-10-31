@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 from . import core, criteria, db, fetcher
 from .people import People, Person, Unavailable
+from .sources import SOURCES
 
 people = People.from_service()
 logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s: %(message)s", level=logging.INFO)
@@ -32,7 +33,10 @@ logging.getLogger("httpx").setLevel(logging.WARNING)  # otherwise every page fet
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    db.connect().close()  # creates tables on the first start
+    conn = db.connect()  # creates tables on the first start
+    if core.mark_interrupted(conn):
+        logging.getLogger(__name__).warning("A fetch was cut off by the last restart: it will be tried again")
+    conn.close()
     stop = threading.Event()
     threading.Thread(target=fetcher.daily, args=(stop,), daemon=True, name="daily-fetch").start()
     yield
@@ -158,10 +162,11 @@ def get_listing(listing_id: int, conn=Depends(get_conn), settings=Depends(get_cr
 
 
 @router.patch("/listings/{listing_id}")
-def update_listing(listing_id: int, body: ListingChanges, actor=Depends(get_actor),
+def update_listing(listing_id: int, body: ListingChanges, actor=Depends(optional_actor),
                    conn=Depends(get_conn), settings=Depends(get_criteria)):
-    """Hide or star a listing. Needs write access."""
-    return core.set_flags(conn, settings, actor, listing_id, **body.model_dump(exclude_unset=True))
+    """Hide or star a listing. A person needs write access; the terminal (`estate star`)
+    asks with the API token alone."""
+    return core.set_flags(conn, settings, actor or core.TRUSTED, listing_id, **body.model_dump(exclude_unset=True))
 
 
 @router.get("/digest", dependencies=reading)
@@ -178,11 +183,16 @@ def runs(limit: int = Query(10, le=100), conn=Depends(get_conn)):
 
 
 @router.post("/runs", status_code=202)
-def start_run(actor=Depends(get_actor), settings=Depends(get_criteria)):
-    """Fetch now instead of waiting for the daily time. Needs admin access.
+def start_run(source: str | None = Query(None, description="Only this source, e.g. pvp"),
+              actor=Depends(optional_actor), settings=Depends(get_criteria)):
+    """Fetch now instead of waiting for the daily time. A person needs admin access;
+    the terminal (`estate fetch`) asks with the API token alone.
     Returns at once; the fetch takes a while (see GET /runs)."""
-    core.require(actor, "admin")
-    fetcher.start(settings)
+    if actor is not None:
+        core.require(actor, "admin")
+    if source and source not in SOURCES:
+        raise core.Invalid(f"Unknown source {source!r}. Known: {', '.join(SOURCES)}.")
+    fetcher.start(settings, {source: SOURCES[source]} if source else None)
     return {"detail": "Fetch started."}
 
 

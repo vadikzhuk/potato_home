@@ -162,11 +162,15 @@ estate star 12             # watch it: price drops come in the digest (unstar)
 estate hide 12             # never show it again (unhide)
 estate starred
 estate check               # is criteria.yaml fine? how many listings does it let through?
-estate fetch               # fetch now (--source pvp for one site)
+estate fetch               # the service fetches now; shows the result (--source pvp, --no-wait)
 estate runs                # the latest fetches: when, how many, errors
 ```
 
 Hidden and starred are shared by everyone at home.
+
+Only the service itself ever fetches: `estate fetch` asks it to (see "One writer per
+database" below). A second fetch is refused while one runs, and a fetch cut off by a
+restart is marked "interrupted" and tried again within a minute.
 
 ## APIs
 
@@ -176,8 +180,13 @@ http://localhost:8001/docs (tickets) and http://localhost:8003/docs (estate). Ev
 Reading with those headers checks the person's read access. Reading without them is
 a service asking, e.g. the screen.
 
-Only a service's own container should touch its database in `data/<service>/`. Don't
-open one from the host while the service is running; stop it first.
+**One writer per database.** Each service is the only program that writes its database
+in `data/<service>/`. The `users`, `tk` and `estate` commands read it directly
+(read-only), but send every change to their service's API, so the service has to be
+running for changes. The reason: on a Mac, Docker shares `./data` with the containers in
+a way that can corrupt a SQLite file when two programs write it at the same time. On
+Linux it's safe, but the rule is the same everywhere. Don't open a database from the
+host while its service is running; stop it first.
 
 ## Info screen
 
@@ -330,11 +339,18 @@ TICKETS_URL=http://localhost:8001 services/screen/.venv/bin/uvicorn screen.main:
 USERS_URL=http://localhost:8002 TICKETS_URL=http://localhost:8001 ESTATE_URL=http://localhost:8003 TELEGRAM_TOKEN=... services/bot/.venv/bin/python -m bot.main
 ```
 
-The local CLIs use `data/users/users.db`, `data/tickets/tickets.db` and `data/estate/estate.db`.
+The local CLIs read `data/users/users.db`, `data/tickets/tickets.db` and `data/estate/estate.db`,
+and send changes to the services at `USERS_URL`, `TICKETS_URL` and `ESTATE_URL` (inside
+Docker they talk to their own container, so nothing is needed there):
+
+```bash
+USERS_URL=http://localhost:8002 services/users/.venv/bin/users grant Anna tickets write
+```
 
 How the services are built:
-- **users, tickets:** `core.py` holds all the rules; `api.py` and `cli.py` only call it.
-  Tickets asks the users service who is who (`people.py`).
+- **users, tickets:** `core.py` holds all the rules; `api.py` calls it. `cli.py` reads
+  through it and sends changes to the API with `service.py`. Tickets asks the users
+  service who is who (`people.py`).
 - **estate:** the same, plus `sources/` with one file per website (each has a
   `fetch()` that yields listings), `parse.py` to read rooms, m² and towns out of Italian
   text, `criteria.py` for the settings file and `fetcher.py` for the daily fetch.

@@ -54,6 +54,17 @@ def local_today() -> str:
     return datetime.now(LOCAL_TZ).date().isoformat()
 
 
+class Trusted:
+    """The terminal, or another of our services asking with the API token alone: may do anything."""
+    name = "terminal"
+
+    def can(self, needed: str) -> bool:
+        return True
+
+
+TRUSTED = Trusted()
+
+
 def require(person, needed: str) -> None:
     """Refuse unless the person has at least `needed` access to estate."""
     if person is None or not person.can(needed):
@@ -154,6 +165,11 @@ def link_duplicates(conn: sqlite3.Connection, criteria: dict) -> int:
 
 
 # --- Fetch runs ---------------------------------------------------------------
+# Only the service itself fetches (the terminal asks it to), so it is the only
+# program writing the database. On a Mac, Docker's shared folders corrupt SQLite
+# when two programs write at once.
+
+INTERRUPTED = "interrupted: the service stopped during the fetch"
 
 def start_run(conn: sqlite3.Connection) -> int:
     with conn:
@@ -180,9 +196,23 @@ def list_runs(conn: sqlite3.Connection, limit: int = 10) -> list[dict]:
 
 
 def latest_run(conn: sqlite3.Connection) -> dict | None:
-    """The newest finished run."""
-    row = conn.execute("SELECT * FROM runs WHERE finished_at IS NOT NULL ORDER BY id DESC LIMIT 1").fetchone()
+    """The newest run that finished (not one cut off by a restart)."""
+    row = conn.execute("SELECT * FROM runs WHERE finished_at IS NOT NULL AND errors NOT LIKE 'interrupted%'"
+                       " ORDER BY id DESC LIMIT 1").fetchone()
     return dict(row) if row else None
+
+
+def running_run(conn: sqlite3.Connection) -> dict | None:
+    """A run that started and hasn't finished, if there is one."""
+    row = conn.execute("SELECT * FROM runs WHERE finished_at IS NULL ORDER BY id DESC LIMIT 1").fetchone()
+    return dict(row) if row else None
+
+
+def mark_interrupted(conn: sqlite3.Connection) -> int:
+    """When the service starts, any unfinished run was cut off by the restart. Returns how many."""
+    with conn:
+        return conn.execute("UPDATE runs SET finished_at = ?, errors = ? WHERE finished_at IS NULL",
+                            (now(), INTERRUPTED)).rowcount
 
 
 # --- Filtering and scoring ----------------------------------------------------

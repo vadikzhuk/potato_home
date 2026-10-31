@@ -44,7 +44,7 @@ def test_top_and_auctions(client):
 def test_hide_and_star(client):
     listing_id = client.get("/listings/top").json()[0]["id"]
     assert client.patch(f"/listings/{listing_id}", json={"starred": True}, headers=KID).status_code == 403
-    assert client.patch(f"/listings/{listing_id}", json={"starred": True}).status_code == 401  # who?
+    assert client.patch(f"/listings/{listing_id}", json={"starred": False}).status_code == 200  # the terminal
     assert client.patch(f"/listings/{listing_id}", json={"starred": True}, headers=ANNA).json()["starred"]
     assert [l["id"] for l in client.get("/listings/starred").json()] == [listing_id]
     client.patch(f"/listings/{listing_id}", json={"hidden": True}, headers=ANNA)
@@ -54,9 +54,24 @@ def test_hide_and_star(client):
 
 
 def test_fetch_by_hand_needs_admin(client, monkeypatch):
-    monkeypatch.setattr(fetcher, "start", lambda settings: None)
+    started = []
+    monkeypatch.setattr(fetcher, "start", lambda settings, sources: started.append(sources))
     assert client.post("/runs", headers=ANNA).status_code == 403
     assert client.post("/runs", headers=ALEX).status_code == 202
+    assert client.post("/runs", params={"source": "pvp"}).status_code == 202  # the terminal: token only
+    assert client.post("/runs", params={"source": "nope"}).status_code == 400
+    assert started[0] is None and list(started[1]) == ["pvp"]
+
+
+def test_an_unfinished_fetch_is_marked_interrupted_on_start(tmp_path, monkeypatch):
+    monkeypatch.setenv("ESTATE_DB", str(tmp_path / "estate.db"))
+    monkeypatch.setattr(fetcher, "daily", lambda stop: None)
+    conn = db.connect()
+    conn.execute("INSERT INTO runs (started_at) VALUES ('2026-10-31T09:44:00+00:00')")
+    conn.commit()
+    with TestClient(api.app):
+        pass
+    assert db.connect().execute("SELECT errors FROM runs").fetchone()[0] == core.INTERRUPTED
 
 
 def test_digest_before_any_fetch(client):

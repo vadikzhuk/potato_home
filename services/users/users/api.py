@@ -96,6 +96,10 @@ class Level(BaseModel):
     level: str  # read, write or admin
 
 
+class Records(BaseModel):
+    users: list[dict]  # as in users.yaml
+
+
 # --- Endpoints ----------------------------------------------------------------
 
 @app.get("/health")
@@ -131,8 +135,17 @@ def get_user(user_id: int, conn=Depends(get_conn)):
 
 
 @router.post("/users", status_code=201)
-def add_user(body: NewUser, actor=Depends(get_actor), conn=Depends(get_conn)):
+def add_user(body: NewUser, actor=Depends(optional_actor), conn=Depends(get_conn)):
+    """Needs a users admin, except for the very first user."""
+    if actor is None and core.count_users(conn) > 0:
+        raise HTTPException(401, "Send X-Telegram-Id or X-User-Id of the person making the change.")
     return core.add_user(conn, actor, body.name, body.telegram_id)
+
+
+@router.post("/users/import")
+def import_users(body: Records, actor=Depends(get_actor), conn=Depends(get_conn)):
+    """Make users match the records (the format of users.yaml). Returns what changed."""
+    return core.import_users(conn, actor, body.users)
 
 
 @router.patch("/users/{user_id}")

@@ -1,7 +1,9 @@
 """Fetching: asking every source for listings and saving them.
 
-It runs by itself once a day at criteria.yaml's fetch time (see daily()),
-or right now with `estate fetch`. One fetch at a time in this process.
+It runs inside the service: by itself once a day at criteria.yaml's fetch
+time (see daily()), or when asked through the API (`estate fetch` does that).
+One fetch at a time, and never from a second program: on a Mac, two programs
+writing the same SQLite file through Docker's shared folder corrupt it.
 """
 
 import logging
@@ -27,6 +29,9 @@ def run(conn, settings: dict, sources: dict | None = None,
     if not _running.acquire(blocking=False):
         raise Busy("A fetch is already running.")
     try:
+        running = core.running_run(conn)
+        if running:  # started by another program; the service marks those interrupted when it starts
+            raise Busy(f"Fetch #{running['id']} is already running (started {running['started_at'][:16]} UTC).")
         run_id = core.start_run(conn)
         seen = added = 0
         errors = []
@@ -51,15 +56,19 @@ def run(conn, settings: dict, sources: dict | None = None,
         _running.release()
 
 
-def start(settings: dict) -> None:
+def start(settings: dict, sources: dict | None = None) -> None:
     """Fetch in the background, now. Returns at once; raises Busy if a fetch is running."""
-    if _running.locked():
-        raise Busy("A fetch is already running.")
+    conn = db.connect()
+    try:
+        if _running.locked() or core.running_run(conn):
+            raise Busy("A fetch is already running: see `estate runs`.")
+    finally:
+        conn.close()
 
     def work():
         conn = db.connect()
         try:
-            run(conn, settings)
+            run(conn, settings, sources)
         except Busy:
             pass  # another one started in the meantime: fine
         finally:
@@ -72,7 +81,9 @@ def is_due(conn, settings: dict, moment: datetime) -> bool:
     """Is it past today's fetch time, with no fetch started today yet?"""
     if moment.strftime("%H:%M") < settings["fetch"]["time"]:
         return False
-    last = conn.execute("SELECT started_at FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+    # A run cut off by a restart doesn't count: today's fetch is tried again
+    last = conn.execute("SELECT started_at FROM runs WHERE errors NOT LIKE 'interrupted%'"
+                        " ORDER BY id DESC LIMIT 1").fetchone()
     if last is None:
         return True
     started = datetime.fromisoformat(last["started_at"]).astimezone(core.LOCAL_TZ)

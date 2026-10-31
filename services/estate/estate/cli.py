@@ -3,16 +3,21 @@
 Each command reads its arguments and calls one function from core.py.
 The terminal needs no user: whoever can run it can read the database file anyway.
 Hidden and starred are shared by everyone at home.
+
+Reading opens the database directly (read-only). Changes, and `estate fetch`, are
+sent to the running estate service (see service.py), so the service is the only
+program writing the database.
 """
 
 import sqlite3
+import time
 from datetime import datetime
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import core, criteria, db, fetcher
+from . import core, criteria, db, service
 from .sources import SOURCES
 
 app = typer.Typer(help="Cheap houses and apartments in Italy.", no_args_is_help=True)
@@ -25,7 +30,7 @@ conn: sqlite3.Connection
 @app.callback()
 def main():
     global conn
-    conn = db.connect()
+    conn = db.connect(read_only=True)
 
 
 def run():
@@ -35,14 +40,6 @@ def run():
     except core.EstateError as error:
         console.print(f"[red]{error}[/red]")
         raise SystemExit(1)
-
-
-class Admin:
-    """The terminal acts with full access."""
-    name = "terminal"
-
-    def can(self, needed: str) -> bool:
-        return True
 
 
 def euros(value: float | None) -> str:
@@ -110,7 +107,7 @@ def starred():
 
 
 def _flag(listing_id: int, **flags) -> None:
-    l = core.set_flags(conn, criteria.load(), Admin(), listing_id, **flags)
+    l = service.call("PATCH", f"/listings/{listing_id}", json=flags)
     console.print(f"#{l['id']} {l['title']}: " + ", ".join(f"{k} {'on' if v else 'off'}" for k, v in flags.items()))
 
 
@@ -137,16 +134,27 @@ def unhide(listing_id: int):
 
 
 @app.command()
-def fetch(source: str = typer.Option(None, help=f"Only this one: {', '.join(SOURCES)}.")):
-    """Fetch now instead of waiting for the daily time (takes a while)."""
-    if source and source not in SOURCES:
-        raise core.Invalid(f"Unknown source {source!r}. Known: {', '.join(SOURCES)}.")
-    settings = criteria.load()
-    sources = {source: SOURCES[source]} if source else None
-    result = fetcher.run(conn, settings, sources, say=console.print)
-    console.print(f"Done: {result['seen']} listings, {result['added']} new.")
-    if result["errors"]:
-        console.print(f"[red]{result['errors']}[/red]")
+def fetch(
+    source: str = typer.Option(None, help=f"Only this one: {', '.join(SOURCES)}."),
+    wait: bool = typer.Option(True, "--wait/--no-wait", help="Wait for the result (Ctrl+C stops only the waiting)."),
+):
+    """Fetch now instead of waiting for the daily time. The service does it (about 15 minutes)."""
+    runs_before = core.list_runs(conn, 1)
+    last_id = runs_before[0]["id"] if runs_before else 0
+    service.call("POST", "/runs", params={"source": source} if source else {})
+    console.print("The service is fetching. Follow it with `estate runs`; it goes on if you close this.")
+    if not wait:
+        return
+
+    with console.status("Fetching…"):
+        while True:
+            time.sleep(5)
+            latest = core.list_runs(conn, 1)[0]
+            if latest["id"] > last_id and latest["finished_at"]:  # the run the service just started is done
+                break
+    console.print(f"Done: {latest['seen']} listings, {latest['added']} new.")
+    if latest["errors"]:
+        console.print(f"[red]{latest['errors']}[/red]")
 
 
 @app.command()
