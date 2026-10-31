@@ -1,0 +1,56 @@
+# What the estate service looks for and how it ranks what it finds.
+#
+# Save the file and the next digest, /estate_top or `estate top` uses it: no restart.
+# Regions and prices also decide what is asked from the sites, from the next fetch on.
+# Check your changes with: estate check
+#
+# Words below are matched anywhere in the title and description, ignoring case,
+# and parts of words work: "terrazz" matches both "terrazzo" and "terrazza".
+
+search:
+  regions: [Piemonte, Liguria, Toscana, Lazio]   # Italian names
+  max_price: 30000         # euros
+  min_price: 3000          # cheaper is nearly always a garage, a share or a typo
+  bedrooms: {min: 2, max: 3}
+  unknown_bedrooms: true   # keep listings that don't say (many auctions don't)
+  kinds: [apartment, house]   # also possible: other (garages, land, shops...)
+  auctions: true           # court auctions: from PVP and "all'asta" listings
+
+# A listing with any of these words is skipped: cheap for a reason you don't want.
+exclude_words:
+  - nuda proprietà         # bare ownership: someone keeps living there for life
+  - usufrutto
+  - diritto di abitazione
+  - quota indivisa         # only a share of the property is for sale
+  - quota di proprietà
+  - quota pari
+  - multiproprietà         # timeshare
+  - affittasi              # for rent
+
+scoring:
+  # How much each part counts. Any numbers: they are scaled so the best is 100.
+  weights:
+    price_per_m2: 35   # cheap for its size, compared with others in the province
+    price: 15          # cheap overall
+    condition: 20      # the words below; for auctions also: free or occupied
+    extras: 10         # garden, terrace...
+    price_drop: 10     # cheaper now than when first seen (20% down = full points)
+    details: 10        # says m², bedrooms and has a photo: easier to judge
+  # Not just "abitabile": sites tag "Cucina Abitabile" (an eat-in kitchen) everywhere
+  good_condition: [subito abitabile, già abitabile, ristrutturat, buono stato, ottimo stato,
+                   buone condizioni, ottime condizioni]
+  bad_condition: [da ristrutturare, da riordinare, da sistemare, rudere, al grezzo, inagibil,
+                  crollat, da demolire, fatiscente, riscaldamento assente]
+  extras: [giardino, terrazz, balcon, box, garage, cantina, vista mare, caminetto, cortile, orto]
+  preferred_provinces: []    # e.g. [Asti, Imperia]: these get bonus points
+  preferred_bonus: 10
+
+digest:
+  top: 10          # best new listings in the daily Telegram message
+  auctions: 5      # and up to this many new auctions, in their own list
+  min_score: 50    # nothing below this is sent
+
+fetch:
+  time: "05:00"         # every day, home time; the digest is sent when it's done
+  pause_seconds: 2      # between pages, to be gentle with the sites
+  gone_after_days: 3    # not seen on the site for this long: the listing is gone
