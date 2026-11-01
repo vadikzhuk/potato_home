@@ -16,6 +16,7 @@ import time
 from telegram.error import TelegramError
 from telegram.ext import Application, ContextTypes
 
+from .botwatch.client import api as botwatch_api
 from .common import ApiError
 from .estate.client import api as estate_api
 from .tickets.client import api as tickets_api
@@ -32,7 +33,7 @@ async def self_check(context: ContextTypes.DEFAULT_TYPE) -> None:
         await context.bot.get_me()
     except TelegramError as error:
         problems.append(f"Telegram: {error}")
-    for service in (users_api, tickets_api, estate_api):
+    for service in (users_api, tickets_api, estate_api, botwatch_api):
         try:
             await service.call("GET", "/health")
         except ApiError as error:

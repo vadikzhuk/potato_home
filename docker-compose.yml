@@ -1,6 +1,12 @@
 # Every home service is one entry here. Each one is built from its own folder
 # under services/ and keeps its data in its own folder under ./data on the host.
 # Services find each other inside Docker by name, e.g. http://users:8000.
+#
+# Your own Telegram bots are in bots/compose.yml, included here: the usual
+# `docker compose up -d`, `ps`, `logs` cover them too.
+
+include:
+  - bots/compose.yml
 
 x-healthcheck: &healthcheck
   test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -82,12 +88,53 @@ services:
       USERS_URL: http://users:8000
       TICKETS_URL: http://tickets:8000
       ESTATE_URL: http://estate:8000
+      BOTWATCH_URL: http://botwatch:8000
     volumes:
-      - ./data/bot:/data   # state.json: which ticket changes and estate digests were already sent
+      - ./data/bot:/data   # state.json: which ticket changes, estate digests and bot alerts were already sent
     depends_on:
       - users
       - tickets
       - estate
+      - botwatch
     # no published ports: the bot asks Telegram for messages itself (long polling).
     # Inside Docker it answers http://bot:8000/health for the info screen.
     healthcheck: *healthcheck
+
+  # Watches your own Telegram bots (bots/compose.yml): running, stuck, memory, errors, usage.
+  botwatch:
+    build: ./services/botwatch
+    restart: unless-stopped
+    logging: *logging
+    env_file: .env    # API_TOKEN, USAGE_TOKEN, TZ
+    environment:
+      DOCKER_URL: http://docker-proxy:2375
+    volumes:
+      - ./data/botwatch:/data   # botwatch.db lives here
+      - ./services/botwatch/settings.yaml:/app/settings.yaml   # edit on the host: used at the next check
+    ports:
+      - "127.0.0.1:8004:8000"   # only this machine: http://localhost:8004/docs
+    networks:
+      - default      # the home bot and the screen ask it
+      - bots         # the bots send it usage counts
+      - docker-api   # it asks docker-proxy about the bot containers
+    depends_on:
+      - docker-proxy
+    healthcheck: *healthcheck
+
+  # Lets botwatch READ container information (state, memory, logs) and nothing else.
+  # Access to Docker itself would be admin access to the whole server.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      CONTAINERS: 1   # reading containers is allowed; everything else (POST, images, exec...) is refused
+      LOG_LEVEL: warning   # otherwise it logs every request botwatch makes
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-api
+
+networks:
+  docker-api:
+    internal: true   # only botwatch is on it: no other container (and no bot) can reach docker-proxy

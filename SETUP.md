@@ -337,6 +337,10 @@ users grant YourName estate admin
 users grant Anna estate read
 ```
 
+botwatch (your own bots) is such a service: `users grant YourName botwatch admin` gives
+you `/bots` and its alerts. setup.sh also adds the `USAGE_TOKEN` it needs to `.env`.
+Moving your bots onto the server: [bots/README.md](bots/README.md).
+
 ## Backups
 
 All data is in `data/`, a few small files. To make a copy:
@@ -356,7 +360,7 @@ tokens. To restore: stop the services, unpack it into `~/potato_home`, then run 
 | What you see | What to do |
 |---|---|
 | Something is red on the screen | `./setup.sh --check`, then `docker compose logs --tail 50 <service>` |
-| Bot log says `409 Conflict` | another copy of the bot runs with the same token, e.g. on the old machine: stop it there |
+| Bot log says `409 Conflict` | another copy of the bot runs with the same token, e.g. on the old machine or Railway: stop it there |
 | Bot log says `TELEGRAM_TOKEN is empty` | add the token to `.env`, then `docker compose up -d bot` |
 | `permission denied` with docker (Linux) | use `sudo docker ...`, or log out and in after joining the docker group |
 | setup.sh says the system is 32-bit (`armhf`) | install the 64-bit Raspberry Pi OS |

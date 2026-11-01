@@ -15,8 +15,8 @@
 #   2. Packages: git, curl, Docker with Compose (installed with pacman/apt/brew, asks first)
 #   3. Docker: running now and started on every boot
 #   4. Docker access: directly, or through sudo
-#   5. Settings: .env with API_TOKEN (generated), TELEGRAM_TOKEN (asked), TZ, MORNING_SUMMARY_TIME
-#   6. Data folders: data/users, data/tickets, data/estate, data/bot
+#   5. Settings: .env with API_TOKEN and USAGE_TOKEN (generated), TELEGRAM_TOKEN (asked), TZ, MORNING_SUMMARY_TIME
+#   6. Data folders: data/users, data/tickets, data/estate, data/botwatch, data/bot
 #   7. Start: build and start all services, then wait until each one answers
 #   8. Summary: addresses, next steps, sleep/lid/firewall reminders
 #
@@ -278,19 +278,19 @@ setup_env() {
     fi
     $CHECK_ONLY || chmod 600 .env  # it holds secrets: readable only by you
 
-    local token
-    token=$(env_get API_TOKEN)
-    if [[ -z $token || $token == change-me ]]; then
-        if $CHECK_ONLY; then
-            problem "API_TOKEN isn't set"
+    local token name
+    for name in API_TOKEN USAGE_TOKEN; do
+        token=$(env_get "$name")
+        if [[ -n $token && $token != change-me ]]; then
+            ok "$name is set"
+        elif $CHECK_ONLY; then
+            problem "$name isn't set"
         else
             # 40 random hex characters
-            env_set API_TOKEN "$(od -An -N20 -tx1 /dev/urandom | tr -d ' \n')"
-            ok "generated a random API_TOKEN"
+            env_set "$name" "$(od -An -N20 -tx1 /dev/urandom | tr -d ' \n')"
+            ok "generated a random $name"
         fi
-    else
-        ok "API_TOKEN is set"
-    fi
+    done
 
     token=$(env_get TELEGRAM_TOKEN)
     if [[ -n $token ]]; then
@@ -336,7 +336,7 @@ setup_env() {
 setup_data() {
     step "Data folders"
     local dir
-    for dir in data/users data/tickets data/estate data/bot; do
+    for dir in data/users data/tickets data/estate data/botwatch data/bot; do
         if [[ -d $dir ]]; then
             continue
         elif $CHECK_ONLY; then
@@ -377,8 +377,10 @@ bot_health() {
 
 start_services() {
     step "Services"
-    local services=(users tickets estate screen bot)
-    [[ -z $(env_get TELEGRAM_TOKEN) ]] && services=(users tickets estate screen)
+    # Your own bots (bots/compose.yml) aren't started here: they need their tokens in .env
+    # first. Start them with: docker compose up -d
+    local services=(users tickets estate docker-proxy botwatch screen bot)
+    [[ -z $(env_get TELEGRAM_TOKEN) ]] && services=(users tickets estate docker-proxy botwatch screen)
 
     if $CHECK_ONLY; then
         local status service
@@ -404,6 +406,7 @@ start_services() {
     wait_for users   curl -sf http://localhost:8002/health
     wait_for tickets curl -sf http://localhost:8001/health
     wait_for estate  curl -sf http://localhost:8003/health
+    wait_for botwatch curl -sf http://localhost:8004/health
     wait_for screen  curl -sf http://localhost:8080/health
     if [[ " ${services[*]} " == *" bot "* ]]; then
         wait_for bot bot_health

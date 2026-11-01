@@ -9,12 +9,16 @@ Small home services, each in its own folder and container, talking over HTTP.
 | `estate` | cheap houses and apartments in Italy: found daily, ranked, sent as a digest | 8003 (this machine only) |
 | `screen` | 16:9 info screen for the TV: today's weather, homes in Italy, news, health, tickets | 8080 |
 | `bot` | Telegram bot for all services | none (long polling) |
+| `botwatch` | watches your own Telegram bots: running, stuck, crashes, memory, errors, usage | 8004 (this machine only) |
+| `docker-proxy` | lets botwatch read container information, and nothing else | none |
+| your bots | your other Telegram bots, from their own repositories ([bots/](bots/README.md)) | none (long polling) |
 
 ```
 potato_home/
 ├── docker-compose.yml    # which services run and how
 ├── .env                  # secrets (copy from .env.example, never committed)
 ├── data/<service>/       # each service's data, mounted into its container (never committed)
+├── bots/                 # your own Telegram bots: compose.yml lists them, botstats.py counts usage
 ├── scripts/              # one-time maintenance scripts
 └── services/<name>/      # one folder per service, with its own Dockerfile
 ```
@@ -24,7 +28,10 @@ bot ──► users   (who is this? what may they do?)
  ├────► tickets ──► users (access levels, names)
  └────► estate  ──► users (access levels)
                 └─► trovacasa.it, pvp.giustizia.it (once a day)
-screen ──► tickets, estate
+screen ──► tickets, estate, botwatch
+bot ───► botwatch ──► docker-proxy ──► Docker (read only: state, memory, logs)
+           ▲      └─► Telegram (with each bot's token: token ok? messages waiting?)
+your bots ─┘ (usage counts)
 ```
 
 ## First start
@@ -67,10 +74,14 @@ alias dc="docker compose -f ~/potato_home/docker-compose.yml"
 alias users="dc exec users users"
 alias tk="dc exec tickets tickets"
 alias estate="dc exec estate estate"
+alias botwatch="dc exec botwatch botwatch"
 ```
 
 The `users` alias hides the system's own `users` command (which lists logged-in users).
 If a command prints just `usage: users`, the alias isn't defined in that terminal.
+
+To run these from another computer, or from your phone away from home, see
+[REMOTE_ACCESS.md](REMOTE_ACCESS.md).
 
 ## Users and access
 
@@ -78,11 +89,11 @@ Every person has one **access level per service**: `read`, `write` or `admin`. E
 includes the ones before it. No level means no access. Each service decides what the
 levels mean for it:
 
-| Level | tickets | estate | users |
-|---|---|---|---|
-| read | see all tickets | see listings, get the daily digest | see the user list |
-| write | create tickets; change ones you created or are assigned to; get tickets assigned | star and hide listings | — |
-| admin | change any ticket; morning list of late unassigned tickets | start a fetch by hand | add/change users, grant and revoke access |
+| Level | tickets | estate | botwatch | users |
+|---|---|---|---|---|
+| read | see all tickets | see listings, get the daily digest | `/bots`: status and usage of your bots | see the user list |
+| write | create tickets; change ones you created or are assigned to; get tickets assigned | star and hide listings | — | — |
+| admin | change any ticket; morning list of late unassigned tickets | start a fetch by hand | get alerts when a bot has a problem | add/change users, grant and revoke access |
 
 ```bash
 users list --all                     # everyone and their access
@@ -172,11 +183,47 @@ Only the service itself ever fetches: `estate fetch` asks it to (see "One writer
 database" below). A second fetch is refused while one runs, and a fetch cut off by a
 restart is marked "interrupted" and tried again within a minute.
 
+## Your own Telegram bots (bots/, botwatch)
+
+Your other bots run here too, each in its own container, built from its own GitHub
+repository. **How to add or move one: [bots/README.md](bots/README.md).**
+
+**botwatch** checks every bot once a minute (a container with the `potato.bot` label,
+which every entry in `bots/compose.yml` has):
+
+| What | How |
+|---|---|
+| running, crashed, keeps crashing; since when; uptime | Docker, through docker-proxy |
+| memory (against its limit) and CPU | Docker |
+| errors, and the latest one | the bot's log since the previous check (ERROR lines, tracebacks) |
+| Telegram accepts the token | `getMe`, with the bot's token |
+| **stuck**: running, but messages wait unread for over 5 minutes | `getWebhookInfo` shows how many wait |
+| a webhook left from hosting elsewhere (polling gets nothing then) | `getWebhookInfo` |
+| **usage**: updates, users, new users, commands, failures, answer time, who blocked the bot | `botstats.py` inside the bot (optional) |
+
+**Alerts** come from the home bot to everyone with botwatch **admin** access: 🔴 when a
+problem appears, 🟢 when it's gone, 🔁 when a bot crashed and Docker restarted it
+(at most once an hour per bot), 👀 for a new bot.
+
+```bash
+botwatch status            # every bot now: state, memory, CPU, uptime, errors, usage today
+botwatch usage quiz_bot    # day by day, last 7 days (--days 30); name or @username
+botwatch alerts            # the latest alerts
+```
+
+In Telegram: `/bots`, with a 📊 button per bot for its usage. On the TV: the **Bots** row in
+the health panel turns orange when a bot has a problem.
+
+Settings (how often, when a bot counts as stuck, how long to keep history) are in
+[`services/botwatch/settings.yaml`](services/botwatch/settings.yaml); saving the file is enough.
+Checks are kept 30 days, usage a year.
+
 ## APIs
 
 Browse and try them on this machine: http://localhost:8002/docs (users),
-http://localhost:8001/docs (tickets) and http://localhost:8003/docs (estate). Every request needs the header `X-Api-Token`
-(from `.env`). Changes also need who is acting: `X-Telegram-Id` or `X-User-Id`.
+http://localhost:8001/docs (tickets), http://localhost:8003/docs (estate) and
+http://localhost:8004/docs (botwatch). Every request needs the header `X-Api-Token`
+(from `.env`); the bots send usage with `X-Usage-Token` (`USAGE_TOKEN`), which allows nothing else. Changes also need who is acting: `X-Telegram-Id` or `X-User-Id`.
 Reading with those headers checks the person's read access. Reading without them is
 a service asking, e.g. the screen.
 
@@ -221,7 +268,9 @@ What each service checks for its `/health`:
   answer, because then nobody can change tickets.
 - **estate:** its database answers. It reports "degraded" if `criteria.yaml` is broken, the
   last fetch had errors or is more than two days old, or the users service doesn't answer.
-- **bot:** once a minute it checks Telegram, users, tickets and estate, so it shows problems up to
+- **botwatch:** "degraded" when one of your bots has a problem (the detail says which and what),
+  when Docker can't be asked, or when its checks stopped running.
+- **bot:** once a minute it checks Telegram, users, tickets, estate and botwatch, so it shows problems up to
   a minute late. It reports "degraded" if one of them fails, or if that check stopped running.
 
 The last two rows are the outside websites. They show how long the last fetch took and
@@ -271,6 +320,8 @@ address or port forwarding.
 | `/estate` | menu: best listings, best auctions, starred |
 | `/estate 12` | listing card with its photo, score reasons, ⭐ Star / 🙈 Hide and links to the sites |
 | `/estate_top`, `/estate_auctions`, `/estate_starred` | lists with a button per listing |
+| `/bots` | your other bots: running, memory, uptime, errors, usage today; 📊 per bot |
+| `/bots quiz_bot` | how one bot was used in the last 7 days (30 with a button) |
 | `/user_list` | users and their access |
 | `/user_add Name [id]`, `/user_link Name id` | add a user, connect a Telegram id |
 | `/user_grant Name service level`, `/user_revoke Name service` | change access |
@@ -285,11 +336,12 @@ address or port forwarding.
 - **Homes in Italy:** after the estate service's daily fetch, everyone with estate access
   gets the best new listings, new auctions and starred listings that got cheaper.
   No message when nothing is new.
+- **Your bots:** botwatch admins get its alerts within a minute (see "Your own Telegram bots").
 
 How it works: the tickets service lists every change at `/events`. The bot checks it
 every minute and remembers the last change it handled in `data/bot/state.json`, so
 nothing is sent twice after a restart. On its very first start the bot skips older changes.
-The same file remembers the last estate fetch it reported.
+The same file remembers the last estate fetch and the last botwatch alert it reported.
 After changing `.env`, run `docker compose up -d bot` so the container picks it up.
 
 ## Security
@@ -299,7 +351,9 @@ set up port forwarding** on the router for these services.
 
 | What | Who can reach it |
 |---|---|
-| Users API (8002), Tickets API (8001), Estate API (8003) | only this machine (`127.0.0.1`); other services use Docker's internal network |
+| Users API (8002), Tickets API (8001), Estate API (8003), Botwatch API (8004) | only this machine (`127.0.0.1`); other services use Docker's internal network |
+| docker-proxy | only botwatch (a network of their own). It passes on requests that read containers and refuses the rest: no starting, stopping or running commands |
+| Your bots | they reach the internet and botwatch, but not the home services or docker-proxy (network `bots`), and get only their own token |
 | Info screen (8080) | every device on the home network, so the TV can open it. It has no password, so put guests on a guest Wi-Fi. |
 | Bot health (8000) | only inside Docker, for the info screen and Docker's own health check |
 | Telegram bot | anyone on Telegram can write to it, but only known, active users get answers |
@@ -314,7 +368,8 @@ set up port forwarding** on the router for these services.
   off in @BotFather: `/mybots` → your bot → Bot Settings → Allow Groups → Turn off.
 - What each person may do is decided by the service they use, by their access level.
 
-**Secrets:** `.env` holds the bot token and `API_TOKEN` and is never committed.
+**Secrets:** `.env` holds the bot tokens, `API_TOKEN` and `USAGE_TOKEN` and is never committed.
+botwatch reads each bot's token from its container and hides tokens in the errors it stores.
 If the bot token leaks: send `/revoke` to @BotFather, put the new token into `.env` and run
 `docker compose up -d bot`.
 
@@ -324,7 +379,7 @@ passwords or codes into tickets.
 ## Developing a service without Docker
 
 ```bash
-cd services/users                      # or tickets, estate, screen, bot
+cd services/users                      # or tickets, estate, screen, bot, botwatch
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/pytest                       # run the tests
 ```
@@ -336,7 +391,7 @@ services/users/.venv/bin/uvicorn users.api:app --reload --port 8002
 USERS_URL=http://localhost:8002 services/tickets/.venv/bin/uvicorn tickets.api:app --reload --port 8001
 USERS_URL=http://localhost:8002 services/estate/.venv/bin/uvicorn estate.api:app --reload --port 8003
 TICKETS_URL=http://localhost:8001 services/screen/.venv/bin/uvicorn screen.main:app --reload --port 8080
-USERS_URL=http://localhost:8002 TICKETS_URL=http://localhost:8001 ESTATE_URL=http://localhost:8003 TELEGRAM_TOKEN=... services/bot/.venv/bin/python -m bot.main
+USERS_URL=http://localhost:8002 TICKETS_URL=http://localhost:8001 ESTATE_URL=http://localhost:8003 BOTWATCH_URL=http://localhost:8004 TELEGRAM_TOKEN=... services/bot/.venv/bin/python -m bot.main
 ```
 
 The local CLIs read `data/users/users.db`, `data/tickets/tickets.db` and `data/estate/estate.db`,
@@ -356,7 +411,10 @@ How the services are built:
   text, `criteria.py` for the settings file and `fetcher.py` for the daily fetch.
 - **screen:** each data source is one file in `collectors/` with a `fetch(config)`
   function. `main.py` runs each one on a timer, and `templates/index.html` shows the results.
-- **bot:** one folder per service (`users/`, `tickets/`, `estate/`), each with a client for the
+- **botwatch:** `docker.py` and `telegram.py` ask Docker and Telegram, `core.py` turns the answers
+  into checks, problems, alerts and usage, `watcher.py` runs the checks in the background.
+  Its CLI only reads. Its tests also cover `bots/botstats.py`.
+- **bot:** one folder per service (`users/`, `tickets/`, `estate/`, `botwatch/`), each with a client for the
   service's API, `texts.py` for messages and buttons, and `handlers.py` with its commands.
   `general.py` lists the services, and `access.py` decides who may talk to the bot.
   To add a service to the bot, add a folder like these and list it in `general.py`.

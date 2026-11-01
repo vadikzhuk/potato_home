@@ -1,0 +1,7 @@
+# Settings of botwatch. Read before every check: saving the file is enough.
+
+check_every_seconds: 60    # how often every bot is checked
+stuck_after_minutes: 5     # messages waiting this long for a running bot: it's stuck
+memory_warn_percent: 90    # of the bot's memory limit (mem_limit in bots/compose.yml)
+keep_checks_days: 30       # checks and alerts older than this are deleted
+keep_usage_days: 365       # usage records older than this are deleted

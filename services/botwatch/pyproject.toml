@@ -1,0 +1,32 @@
+[project]
+name = "botwatch"
+version = "0.1.0"
+description = "Watches the Telegram bots in bots/compose.yml: health, performance and usage."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "typer>=0.12",
+    "httpx>=0.27",   # asks Docker (through docker-proxy) and Telegram
+    "pyyaml>=6",     # settings.yaml
+    "tzdata",  # timezone data for Europe/Riga, also inside slim Docker images
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "python-telegram-bot>=22,<23"]  # the last one to test bots/botstats.py
+
+[project.scripts]
+botwatch = "botwatch.cli:run"  # gives you the `botwatch` command
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["botwatch"]
+
+[tool.setuptools.package-data]
+botwatch = ["schema.sql"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

@@ -33,6 +33,8 @@ health:
       url: http://tickets:8000/health
     - name: Estate
       url: http://estate:8000/health
+    - name: Bots           # botwatch: "warn" when one of your bots has a problem
+      url: http://botwatch:8000/health
     - name: Telegram bot
       url: http://bot:8000/health
 

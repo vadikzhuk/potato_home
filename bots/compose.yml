@@ -1,0 +1,43 @@
+# Your own Telegram bots (not the home bot: that one is services/bot).
+# docker-compose.yml includes this file, so the usual commands cover the bots too:
+#   docker compose up -d            starts everything, bots included
+#   docker compose logs -f digital_gland_bot
+#
+# Each bot is built straight from its GitHub repository, which needs a Dockerfile.
+# After you push a change: docker compose build digital_gland_bot && docker compose up -d digital_gland_bot
+#
+# Adding a bot (see bots/README.md):
+#   1. copy an entry below and change its name, repository and token variable
+#   2. put the token into .env: NEWNAME_TOKEN=123456:ABC...
+#   3. docker compose up -d --build newname
+# botwatch finds it by itself (the potato.bot label) within a minute.
+
+x-bot: &bot
+  restart: unless-stopped   # started again after a crash and after the server reboots
+  labels:
+    potato.bot: "true"      # botwatch watches every container with this label
+  mem_limit: 256m           # one bot can't take all the server's memory
+  networks:
+    - bots                  # bots reach the internet and botwatch, but not the home services
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+# What every bot gets. Only its own token: never the whole .env with the other secrets.
+x-bot-env: &bot-env
+  TZ: ${TZ:-Europe/Riga}
+  BOTWATCH_URL: http://botwatch:8000   # where botstats.py sends usage counts
+  USAGE_TOKEN: ${USAGE_TOKEN:-}        # lets a bot send usage counts and nothing else
+
+services:
+  digital_gland_bot:
+    <<: *bot
+    build: https://github.com/vadikzhuk/digital_gland_bot.git#main
+    environment:
+      <<: *bot-env
+      BOT_TOKEN: ${DIGITAL_GLAND_BOT_TOKEN:-}
+
+networks:
+  bots: {}

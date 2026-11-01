@@ -10,3 +10,4 @@ users:
     users: admin
     tickets: admin
     estate: admin
+    botwatch: admin

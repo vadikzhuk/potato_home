@@ -10,12 +10,13 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 from .access import known_user
+from .botwatch import handlers as botwatch
 from .common import esc, reply
 from .estate import handlers as estate
 from .tickets import handlers as tickets
 from .users import handlers as users
 
-SERVICES = [tickets, estate, users]
+SERVICES = [tickets, estate, botwatch, users]
 COMMANDS = [("help", "What I can do for you")]
 
 
